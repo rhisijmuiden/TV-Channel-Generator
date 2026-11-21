@@ -57,6 +57,8 @@ function bootstrap() {
   const password = process.env.BK_INITIAL_PASSWORD || randomPassword();
   store.create('users', { username: 'admin', role: 'admin', authMethod: 'password', passwordHash: hash(password), passwordChangedAt: new Date().toISOString(), mustChangePassword: true });
   fs.writeFileSync(INITIAL_PASSWORD_FILE, `${password}\n`, { mode: 0o600 });
+  // A new installation: after choosing a password the admin is walked through the first-run setup.
+  store.setSection('settings', { setupDone: false });
   console.log(`Created user "admin" with one-time password: ${password}`);
   console.log(`(also stored in ${INITIAL_PASSWORD_FILE} until it is changed)`);
 }

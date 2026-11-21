@@ -46,8 +46,15 @@ version() { node -p "require('$APP_DIR/package.json').version" 2>/dev/null || ec
 install_units() {
   [[ -d /etc/systemd/system && -d "$APP_DIR/deploy" ]] || return 0
   install -m 0644 "$APP_DIR/deploy/beeldkrant-update.path" "$APP_DIR/deploy/beeldkrant-update.service" /etc/systemd/system/
+  # The panel address and one-time password on the console login screen and at login (beeldkrant-info).
+  if [[ -f "$APP_DIR/deploy/beeldkrant-welcome.service" ]]; then
+    install -m 0644 "$APP_DIR/deploy/beeldkrant-welcome.service" /etc/systemd/system/
+    install -d /etc/update-motd.d
+    install -m 0755 "$APP_DIR/deploy/motd.sh" /etc/update-motd.d/90-beeldkrant
+  fi
   systemctl daemon-reload
   systemctl enable --quiet --now beeldkrant-update.path || true
+  [[ -f /etc/systemd/system/beeldkrant-welcome.service ]] && { systemctl enable --quiet beeldkrant-welcome || true; }
 }
 
 # Installs dependencies, fixes ownership, refreshes this command and starts the service.
@@ -60,6 +67,7 @@ finish() {
   # Keep this command, beeldkrant-station and the panel's update service current.
   install -m 0755 "$APP_DIR/scripts/update.sh" /usr/bin/update
   [[ -f "$APP_DIR/scripts/station.sh" ]] && install -m 0755 "$APP_DIR/scripts/station.sh" /usr/bin/beeldkrant-station
+  [[ -f "$APP_DIR/scripts/info.sh" ]] && install -m 0755 "$APP_DIR/scripts/info.sh" /usr/bin/beeldkrant-info
   install_units
 
   info "Starting Beeldkrant"

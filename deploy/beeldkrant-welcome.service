@@ -1,0 +1,15 @@
+# Puts the admin panel address, the user "admin" and the one-time password on the console login
+# screen at every boot, so a new container shows them in the Proxmox console without logging in.
+[Unit]
+Description=Show how to reach the Beeldkrant admin panel on the console
+After=beeldkrant.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/beeldkrant-info --issue
+RemainAfterExit=yes
+TimeoutStartSec=180
+
+[Install]
+WantedBy=multi-user.target

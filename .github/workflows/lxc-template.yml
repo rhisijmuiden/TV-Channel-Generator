@@ -1,0 +1,67 @@
+# Builds the Proxmox VE container template (build/lxc/build-template.sh), boots it once to check that
+# Beeldkrant starts on its own, and attaches it to the GitHub release. With a fixed file name,
+#   https://github.com/rhisijmuiden/TV-Channel-Generator/releases/latest/download/beeldkrant-debian-13-amd64.tar.zst
+# always points at the template of the newest release (Proxmox: CT Templates → Download from URL).
+name: LXC template
+
+on:
+  release:
+    types: [published]
+  pull_request:
+    paths:
+      - install/debian.sh
+      - build/lxc/**
+      - deploy/**
+      - scripts/**
+      - .github/workflows/lxc-template.yml
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to attach the template to (empty = only keep it as a workflow artifact)
+        required: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: lxc-template-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name || inputs.tag || github.ref }}
+
+      - name: Install build tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq mmdebstrap zstd debian-archive-keyring systemd-container
+
+      # Ubuntu's debian-archive-keyring does not know the Debian 13 keys yet; take Debian's own.
+      - name: Get the Debian archive keyring
+        run: docker run --rm debian:trixie cat /usr/share/keyrings/debian-archive-keyring.gpg > "$RUNNER_TEMP/debian-archive-keyring.gpg"
+
+      - name: Build the template
+        run: sudo KEYRING="$RUNNER_TEMP/debian-archive-keyring.gpg" build/lxc/build-template.sh dist
+
+      - name: Boot it and check Beeldkrant
+        run: sudo build/lxc/test-template.sh dist/beeldkrant-debian-13-amd64.tar.zst
+
+      - name: Keep it as a workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: beeldkrant-lxc-template
+          path: dist/
+          retention-days: 7
+          compression-level: 0
+
+      - name: Attach it to the release
+        if: github.event_name == 'release' || inputs.tag != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name || inputs.tag }}
+        run: gh release upload "$TAG" dist/beeldkrant-debian-13-amd64.tar.zst dist/beeldkrant-debian-13-amd64.tar.zst.sha256 --clobber --repo "$GITHUB_REPOSITORY"
