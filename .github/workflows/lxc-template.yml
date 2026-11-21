@@ -41,8 +41,12 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y -qq mmdebstrap zstd debian-archive-keyring systemd-container
 
+      # Ubuntu's debian-archive-keyring does not know the Debian 13 keys yet; take Debian's own.
+      - name: Get the Debian archive keyring
+        run: docker run --rm debian:trixie cat /usr/share/keyrings/debian-archive-keyring.gpg > "$RUNNER_TEMP/debian-archive-keyring.gpg"
+
       - name: Build the template
-        run: sudo build/lxc/build-template.sh dist
+        run: sudo KEYRING="$RUNNER_TEMP/debian-archive-keyring.gpg" build/lxc/build-template.sh dist
 
       - name: Boot it and check Beeldkrant
         run: sudo build/lxc/test-template.sh dist/beeldkrant-debian-13-amd64.tar.zst

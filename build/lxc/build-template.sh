@@ -11,6 +11,8 @@
 #     BEELDKRANT_CHANNEL=stable|test   release channel the containers start on (default stable)
 #     ARCH=amd64                       Debian architecture (default amd64)
 #     MIRROR=http://deb.debian.org/debian
+#     KEYRING=<file>                   Debian archive keyring, when the one on this machine is too old to
+#                                      know the Debian 13 keys (Ubuntu 24.04); see the workflow
 set -euo pipefail
 
 REPO_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -37,11 +39,14 @@ command -v zstd >/dev/null || { echo "zstd is missing (apt install zstd)." >&2; 
 PACKAGES=(
   systemd systemd-sysv dbus libpam-systemd ifupdown dhcpcd-base iproute2 iputils-ping
   openssh-server ca-certificates curl wget less nano procps tzdata locales cron logrotate
-  apt-utils bash-completion
+  apt-utils bash-completion debian-archive-keyring
 )
 
 echo "Building $NAME.tar.zst from $(git -C "$REPO_DIR" rev-parse --short HEAD)"
+KEYRING_OPT=()
+[[ -n "${KEYRING:-}" ]] && KEYRING_OPT=(--keyring="$(realpath "$KEYRING")")
 mmdebstrap \
+  "${KEYRING_OPT[@]}" \
   --variant=minbase \
   --architectures="$ARCH" \
   --include="$(IFS=,; echo "${PACKAGES[*]}")" \
