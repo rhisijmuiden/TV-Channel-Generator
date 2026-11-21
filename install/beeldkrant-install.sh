@@ -62,10 +62,15 @@ customize
 install -m 0755 /opt/beeldkrant/scripts/update.sh /usr/bin/update
 # `beeldkrant-station`: connects Beeldkrant to Build My TV Station (see the README).
 install -m 0755 /opt/beeldkrant/scripts/station.sh /usr/bin/beeldkrant-station
+# `beeldkrant-info`: the panel address and one-time password, on the console login screen and at login.
+install -m 0755 /opt/beeldkrant/scripts/info.sh /usr/bin/beeldkrant-info
+install -m 0755 /opt/beeldkrant/deploy/motd.sh /etc/update-motd.d/90-beeldkrant
+install -m 0644 /opt/beeldkrant/deploy/beeldkrant-welcome.service /etc/systemd/system/
 # Lets the admin panel start that same update.
 install -m 0644 /opt/beeldkrant/deploy/beeldkrant-update.path /opt/beeldkrant/deploy/beeldkrant-update.service /etc/systemd/system/
 systemctl daemon-reload
 systemctl enable -q --now beeldkrant-update.path
+systemctl enable -q beeldkrant-welcome
 [[ -n "$BEELDKRANT_REF" ]] && echo "BEELDKRANT_REF=$BEELDKRANT_REF" >/etc/default/beeldkrant
 
 cleanup_lxc

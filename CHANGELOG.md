@@ -2,6 +2,17 @@
 
 All notable changes to Beeldkrant. The admin panel shows this file under the Info button.
 
+## 0.11.0 (2026-11-21)
+
+### Added
+- **Proxmox CT template**: every release now has a Debian 13 container template with Beeldkrant installed, `beeldkrant-debian-13-amd64.tar.zst`. Add it in Proxmox under *CT Templates → Download from URL* with `https://github.com/rhisijmuiden/TV-Channel-Generator/releases/latest/download/beeldkrant-debian-13-amd64.tar.zst` and create containers from it. Each container makes its own one-time admin password on its first boot. Built and boot-tested by a GitHub Actions workflow when a release is published (`build/lxc/`).
+- The **console login screen** shows the admin panel address, the user `admin` and the one-time password, so a new container shows them in the Proxmox console without logging in. The message after logging in on the shell shows them too, and the new `beeldkrant-info` command prints them at any time.
+- **First-run setup** in the admin panel: after choosing a password, the admin of a new installation sets the panel name, server address and port, time zone, date language and release channel, with links to the next steps. It can be skipped.
+
+### Changed
+- The Debian 13 installer works on a physical machine, a VM and a system container (LXC, Incus), only shows its steps and ends with just the address, the user name and the one-time password. The full log is in `/var/log/beeldkrant-install.log`; `VERBOSE=1` shows everything. It refuses Docker-style containers without systemd with a clear message.
+- Inside a container the installer installs the Intel and AMD VAAPI drivers when a GPU is passed through but `lspci` cannot tell which (`GPU=all`).
+
 ## 0.10.0 (2026-10-20)
 
 ### Added

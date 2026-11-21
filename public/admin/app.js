@@ -422,6 +422,7 @@
     if (me.user) applyTheme(me.user.theme);
     if (!me.user) return renderLogin();
     if (me.user.mustChangePassword) return renderChangePassword(true);
+    if (me.setupPending) return renderSetup();
     const hash = location.hash.slice(1) || 'dashboard';
     const [page, arg] = hash.split('/');
     if (page === 'playout' && arg) return renderEditor(arg);
@@ -453,7 +454,8 @@
   const can = (perm) => !!me && !!me.user && (me.user.role === 'admin' || !!(me.user.permissions || {})[perm]);
   const MS_LOGO = '<svg viewBox="0 0 21 21" width="18" height="18" aria-hidden="true"><rect x="1" y="1" width="9" height="9" fill="#f25022"/><rect x="11" y="1" width="9" height="9" fill="#7fba00"/><rect x="1" y="11" width="9" height="9" fill="#00a4ef"/><rect x="11" y="11" width="9" height="9" fill="#ffb900"/></svg>';
   const msLogo = () => { const s = document.createElement('span'); s.className = 'ms-logo'; s.innerHTML = MS_LOGO; return s; };
-  const loggedIn = (res) => { applyTheme(res.user.theme); me = { ...me, user: res.user }; route(); };
+  // Fetches /api/me again, so the first-run setup (setupPending) is known too.
+  const loggedIn = (res) => { applyTheme(res.user.theme); me = null; route(); };
 
   async function renderLogin() {
     const opts = await GET('/api/auth/options').catch(() => ({}));
@@ -549,7 +551,7 @@
         me.user.mustChangePassword = false;
         me.user.passwordExpired = false;
         toast('Password changed', 'ok');
-        if (forced) route();
+        if (forced) { me = null; route(); }
         else { cur.value = p1.value = p2.value = ''; }
       } catch (err) { fail(err); }
     };
@@ -561,6 +563,109 @@
       h('button', { class: 'primary', type: 'submit' }, 'Change password'));
     if (forced) put(app, h('div', { class: 'login' }, form));
     return form;
+  }
+
+  // ---------- first-run setup ----------
+  // Shown once to the admin of a new installation, right after choosing a password: the installer
+  // only prints the address and the one-time password, everything else is set up here.
+  async function renderSetup() {
+    const settings = await GET('/api/settings');
+    const update = await GET('/api/system/update').catch(() => ({ channel: 'stable' }));
+    const browserTz = (() => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone; } catch { return ''; } })();
+    const browserLocale = /^nl/i.test(navigator.language || '') ? 'nl-NL' : /^de/i.test(navigator.language || '') ? 'de-DE' : /^fr/i.test(navigator.language || '') ? 'fr-FR' : 'en-GB';
+    const data = {
+      panelName: settings.panelName || 'Beeldkrant',
+      serverAddress: settings.serverAddress || location.hostname,
+      port: settings.port || Number(location.port) || 80,
+      timezone: browserTz || settings.timezone || 'Europe/Amsterdam',
+      locale: browserLocale,
+      channel: update.channel || 'stable',
+    };
+    const done = async () => {
+      await PUT('/api/settings', { setupDone: true });
+      me.setupPending = false;
+    };
+    const skip = async (e) => { e.preventDefault(); try { await done(); route(); } catch (err) { fail(err); } };
+    const STEPS = ['Server', 'Region', 'Updates', 'Ready'];
+    let at = 0;
+    const card = h('div', { class: 'card stack setup-card' });
+    const urlHint = h('div', { class: 'hint' });
+    const showUrl = () => { urlHint.textContent = `The panel will be at http://${data.serverAddress || location.hostname}:${data.port}${BASE}/admin/`; };
+    const timezones = (() => { try { return Intl.supportedValuesOf('timeZone'); } catch { return []; } })();
+    const tzList = h('datalist', { id: 'setup-timezones' }, timezones.map((z) => h('option', { value: z })));
+    const tzInput = bind(data, 'timezone', () => {}, 'text', { placeholder: 'Europe/Amsterdam' });
+    tzInput.setAttribute('list', 'setup-timezones');
+
+    async function save() {
+      await PUT('/api/settings', { panelName: data.panelName, timezone: data.timezone, locale: data.locale });
+      me.panelName = data.panelName.trim();
+      if (!update.pinned && data.channel !== update.channel) {
+        // The channel is saved even when the check for updates that follows cannot reach GitHub.
+        await PUT('/api/system/update/channel', { channel: data.channel }).catch((err) => toast(`Release channel: ${err.message}`, 'err'));
+      }
+      const r = await PUT('/api/settings/server', { serverAddress: data.serverAddress === location.hostname ? '' : data.serverAddress, port: data.port });
+      await done();
+      return r;
+    }
+
+    function draw() {
+      const body = [
+        () => [
+          h('p', { class: 'muted' }, 'Give this server a name and check the address people use to reach it. You can change all of this later under Settings.'),
+          field('Name', bind(data, 'panelName', () => {}, 'text', { placeholder: 'Beeldkrant' }), { hint: 'Shown in the menu, on the login page and in the browser tab.' }),
+          field('Server address', bind(data, 'serverAddress', showUrl, 'text', { placeholder: location.hostname }), { hint: 'Host name or IP address of this server.' }),
+          field('Port', bind(data, 'port', showUrl, 'number', { min: 1, max: 65535 })),
+          urlHint,
+        ],
+        () => [
+          h('p', { class: 'muted' }, 'The schedule, clocks, dates and backups follow this time zone.'),
+          field('Time zone', tzInput, { hint: browserTz ? `Your browser is in ${browserTz}.` : null }), tzList,
+          field('Language for dates', bind(data, 'locale', () => {}, 'select', { options: [['en-GB', 'English (UK)'], ['en-US', 'English (US)'], ['nl-NL', 'Dutch'], ['de-DE', 'German'], ['fr-FR', 'French']] })),
+        ],
+        () => [
+          h('p', { class: 'muted' }, 'Choose which versions this server installs. Updates are started from Info → Software update.'),
+          update.pinned ? h('div', { class: 'hint' }, `This installation is pinned to branch ${update.pinned}.`)
+            : h('div', { class: 'seg seg-wide' }, ...Object.entries(CHANNEL_INFO).map(([c, [label]]) => h('button', { type: 'button', class: data.channel === c ? 'active' : '', onclick: () => { data.channel = c; draw(); } }, label))),
+          update.pinned ? null : h('div', { class: 'hint' }, CHANNEL_INFO[data.channel][1]),
+        ],
+        () => [
+          h('p', null, 'Beeldkrant is set up. Next steps:'),
+          h('ul', { class: 'setup-next' },
+            h('li', null, h('a', { href: '#playouts' }, 'Make a playout'), ' with scenes to show.'),
+            h('li', null, h('a', { href: '#output' }, 'Add an output'), ': the RTMP(S) or SRT server, YouTube or Facebook to stream to.'),
+            h('li', null, h('a', { href: '#backups' }, 'Set up backups'), ' to an FTP(S) or SFTP server.'),
+            h('li', null, h('a', { href: '#users' }, 'Add users'), ' or Microsoft sign-in.')),
+        ],
+      ][at]();
+      const last = at === STEPS.length - 1;
+      const next = async () => {
+        if (at === STEPS.length - 2) {
+          try {
+            const r = await save();
+            if (r && r.moved) {
+              toast(`Beeldkrant now listens on port ${r.port}. Taking you there…`, 'ok');
+              setTimeout(() => { location.href = `${location.protocol}//${location.hostname}:${r.port}${BASE}/admin/`; }, 1200);
+              return;
+            }
+          } catch (err) { fail(err); return; }
+        }
+        if (last) { location.hash = '#dashboard'; route(); return; }
+        at += 1; draw();
+      };
+      put(card,
+        brand(),
+        h('h2', null, at === 0 ? 'Welcome! Let’s set up Beeldkrant' : STEPS[at]),
+        h('ol', { class: 'setup-steps' }, STEPS.map((label, i) => h('li', { class: i === at ? 'active' : i < at ? 'done' : '' }, label))),
+        body,
+        h('div', { class: 'login-actions' },
+          h('div', { class: 'row' },
+            at > 0 && !last ? h('button', { type: 'button', onclick: () => { at -= 1; draw(); } }, 'Back') : null,
+            h('button', { class: 'primary', type: 'button', onclick: next }, last ? 'Go to the dashboard' : at === STEPS.length - 2 ? 'Save and finish' : 'Next')),
+          last ? null : h('a', { href: '#', onclick: skip }, 'Skip for now')));
+      showUrl();
+    }
+    draw();
+    put(app, h('div', { class: 'login' }, card));
   }
 
   // ---------- dashboard ----------

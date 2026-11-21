@@ -158,7 +158,11 @@ app.get('/api/sso/callback', wrap(async (req, res) => {
 
 app.post('/api/logout', (req, res) => { auth.logout(req, res); res.json({ ok: true }); });
 app.get('/api/me', (req, res) => {
-  res.json({ user: auth.publicUser(auth.currentUser(req)), panelName: store.getSection('settings').panelName, version: pkg.version, permissionLabels: auth.PERMISSIONS, passwordPolicy: auth.policy() });
+  const settings = store.getSection('settings');
+  const user = auth.publicUser(auth.currentUser(req));
+  // Only an installation that started without users has setupDone === false; older ones skip the setup.
+  const setupPending = !!user && user.role === 'admin' && settings.setupDone === false;
+  res.json({ user, panelName: settings.panelName, version: pkg.version, permissionLabels: auth.PERMISSIONS, passwordPolicy: auth.policy(), setupPending });
 });
 // Each user picks their own admin theme.
 app.put('/api/me/theme', (req, res) => {
@@ -544,6 +548,7 @@ app.put('/api/settings', (req, res) => {
   const { timezone, locale, panelName } = req.body || {};
   const patch = {};
   if ('defaultPlayoutId' in (req.body || {})) patch.defaultPlayoutId = req.body.defaultPlayoutId || null;
+  if ((req.body || {}).setupDone === true) patch.setupDone = true;
   if (panelName !== undefined) {
     const name = String(panelName).trim().slice(0, 60);
     if (!name) return res.status(400).json({ error: 'The panel name cannot be empty' });

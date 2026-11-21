@@ -5,12 +5,59 @@ A narrowcasting "beeldkrant" (picture newspaper) generator. You build playouts o
 ![Dashboard with the stream on air, the live preview and the renderer log](docs/screenshots/dashboard.png)
 
 - Admin panel on port **8080**
-- Runs in a **Debian 13 LXC container** on Proxmox VE, installed with one command from the Proxmox shell, or on a [Debian 13 machine or VM](#install-on-a-debian-13-machine-or-vm)
+- Runs in a **Debian 13 LXC container** on Proxmox VE, from a [ready-made CT template](#proxmox-ct-template-download-from-url) or with one command from the Proxmox shell, or on a [plain Debian 13 machine, VM or container](#install-on-a-debian-13-machine-or-vm)
+- The installer only shows the address, the user name and a one-time password; everything else is set up in the admin panel, starting with a short [first-run setup](#first-run-setup)
 - Everything (code, UI, docs) in English
 
-Contents: [Install](#install-on-proxmox-ve) · [Dashboard](#dashboard-and-statistics) · [Playouts](#playouts-and-scenes) · [Media](#media) · [Schedule](#schedule) · [Outputs](#outputs) · [Routing](#routing) · [Settings](#settings-and-your-account) · [Backups](#backups) · [Users and roles](#users-and-roles) · [Updating](#updating)
+Contents: [Install](#install-on-proxmox-ve) · [CT template](#proxmox-ct-template-download-from-url) · [First-run setup](#first-run-setup) · [Dashboard](#dashboard-and-statistics) · [Playouts](#playouts-and-scenes) · [Media](#media) · [Schedule](#schedule) · [Outputs](#outputs) · [Routing](#routing) · [Settings](#settings-and-your-account) · [Backups](#backups) · [Users and roles](#users-and-roles) · [Updating](#updating)
 
 ## Install on Proxmox VE
+
+There are two ways: download the ready-made **CT template** in the Proxmox web interface and create a container from it, or run the **installer script** in the shell of a Proxmox node.
+
+### Proxmox CT template (Download from URL)
+
+Every release has a Debian 13 container template with Beeldkrant already installed. In the Proxmox web interface:
+
+1. Select a storage that holds container templates (usually **local**), open **CT Templates** and click **Download from URL**.
+2. Paste this URL and click **Query URL**:
+   ```
+   https://github.com/rhisijmuiden/TV-Channel-Generator/releases/latest/download/beeldkrant-debian-13-amd64.tar.zst
+   ```
+   For a check, set *Hash algorithm* to SHA-256 and paste the checksum from `beeldkrant-debian-13-amd64.tar.zst.sha256` on the [releases page](https://github.com/rhisijmuiden/TV-Channel-Generator/releases/latest). Click **Download**.
+3. Click **Create CT** and pick `beeldkrant-debian-13-amd64.tar.zst` as the template. Keep *Unprivileged container* and *Nesting* on. Give it at least 2 cores (4 is better), 4096 MB of memory and a 16 GB disk, and a network with DHCP or a fixed address. Tick *Start after created*.
+4. Open the **Console** of the new container. The login screen shows all you need:
+
+```
+  ┌────────────────────────────────────────────────────────────┐
+  │ Beeldkrant is ready.                                       │
+  │                                                            │
+  │ Admin panel:  http://192.168.1.50:8080/                    │
+  │ User name:    admin                                        │
+  │ Password:     q7Lmx3TbKe9Wzp                               │
+  │                                                            │
+  │ This one-time password must be changed at the first login. │
+  │ Everything else is set up in the admin panel.              │
+  └────────────────────────────────────────────────────────────┘
+```
+
+Every container made from the template gets its own one-time password on its first boot. Log in on the console as `root` (with the password you gave in *Create CT*) or run `pct exec <CTID> -- beeldkrant-info` on the Proxmox node to see it again. The address shows as soon as the container has an IP address.
+
+From the Proxmox shell the same download is:
+
+```bash
+pvesh create /nodes/$(hostname)/storage/local/download-url --content vztmpl \
+  --filename beeldkrant-debian-13-amd64.tar.zst \
+  --url https://github.com/rhisijmuiden/TV-Channel-Generator/releases/latest/download/beeldkrant-debian-13-amd64.tar.zst
+```
+
+For hardware encoding, pass the GPU through under the container's **Resources → Add → Device Passthrough** (`/dev/dri/renderD128`, with the GID that `getent group render` shows in the container); the Intel and AMD VAAPI drivers are already in the template. The template starts on the Stable release channel and keeps itself current with *Update now* in the panel or `update` in the container, so an older template is fine.
+
+Why *Download from URL* and not the *Templates* button: that list only shows Proxmox's own and TurnKey's templates, from an index built into Proxmox that cannot be extended.
+
+The template is built by the [LXC template workflow](.github/workflows/lxc-template.yml) when a release is published: it runs `build/lxc/build-template.sh` (mmdebstrap + `install/debian.sh` in template mode), boots the result once with `systemd-nspawn` to check that Beeldkrant starts, creates its password and shows it on the console, and attaches it to the release. Build one yourself on Debian or Ubuntu with `sudo build/lxc/build-template.sh` (needs `mmdebstrap` and `zstd`).
+
+### Installer script
 
 Run this in the shell of a Proxmox node:
 
@@ -340,6 +387,16 @@ Backups are named `beeldkrant_<date>_<time>_<parts>.tar.gz` and kept in `/var/li
   <img src="docs/screenshots/backups-restore-dialog.png" alt="Restoring a backup, choosing the parts" width="49%">
 </p>
 
+## First-run setup
+
+After the first login with the one-time password, the admin chooses a new password and then goes through a short setup: the name of the panel, the server address and port, the time zone and date language (taken from your browser), and the release channel (Stable or Test). It ends with links to the next steps: a playout, an output, backups and users. *Skip for now* goes straight to the dashboard; everything can be changed later under *Settings* and *Info*. Installations that existed before this version do not get the setup.
+
+<p>
+  <img src="docs/screenshots/setup-welcome.png" alt="First-run setup: name, server address and port" width="32%">
+  <img src="docs/screenshots/setup-region.png" alt="First-run setup: time zone and date language" width="32%">
+  <img src="docs/screenshots/setup-updates.png" alt="First-run setup: release channel" width="32%">
+</p>
+
 ## Users and roles
 
 <img src="docs/screenshots/login.png" alt="Login page" width="49%">
@@ -397,15 +454,17 @@ After 5 wrong passwords for a user from one address, sign-in is paused for 30 se
 
 ## Install on a Debian 13 machine or VM
 
-To run Beeldkrant on a minimal Debian 13 machine, a VM or a VPS instead of an LXC container, run this as root:
+To run Beeldkrant on a plain Debian 13: a physical machine, a VM, a VPS or a system container (LXC on Proxmox or another host, Incus), run this as root:
 
 ```bash
 bash -c "$(curl -fsSL https://raw.githubusercontent.com/rhisijmuiden/TV-Channel-Generator/main/install/debian.sh)"
 ```
 
-Without curl, use `wget -qO-` instead of `curl -fsSL`. The installer asks nothing: it installs the packages (Chromium, ffmpeg, Xvfb, PulseAudio, fonts and Debian's Node.js), Beeldkrant in `/opt/beeldkrant` with its data in `/var/lib/beeldkrant`, the systemd service and the `update` command, and prints the admin address and the one-time password at the end. Running it again on an installed machine runs `update`.
+Without curl, use `wget -qO-` instead of `curl -fsSL`. The installer asks nothing and only shows its steps; at the end it prints just the address of the admin panel, the user `admin` and the one-time password (the same box as the [CT template](#proxmox-ct-template-download-from-url)). Everything else is set up in the panel. Behind the scenes it installs the packages (Chromium, ffmpeg, Xvfb, PulseAudio, fonts and Debian's Node.js), Beeldkrant in `/opt/beeldkrant` with its data in `/var/lib/beeldkrant`, the systemd services and the `update`, `beeldkrant-info` and `beeldkrant-station` commands. The full log is in `/var/log/beeldkrant-install.log`. Running it again on an installed machine runs `update`. Beeldkrant needs systemd, so Docker-style application containers are not supported.
 
-Settings: `PORT=<port>` changes the panel port, `BEELDKRANT_CHANNEL=test` installs the latest changes instead of the newest release (see [Release channels](#release-channels)), `BEELDKRANT_REF=<branch>` installs another branch, and `GPU=intel`, `GPU=amd` or `GPU=none` chooses the VAAPI drivers for hardware encoding (by default the installer looks for a GPU passed through to the machine). NVIDIA is only supported in the LXC container for now.
+`beeldkrant-info` shows the address, user and one-time password again at any time; the console login screen and the message after logging in on the shell show them too.
+
+Settings: `PORT=<port>` changes the panel port, `BEELDKRANT_CHANNEL=test` installs the latest changes instead of the newest release (see [Release channels](#release-channels)), `BEELDKRANT_REF=<branch>` installs another branch, `GPU=intel`, `GPU=amd`, `GPU=all` or `GPU=none` chooses the VAAPI drivers for hardware encoding (by default the installer looks for a GPU passed through to the machine) and `VERBOSE=1` shows all output of apt and npm. NVIDIA is only supported with the Proxmox installer script for now.
 
 By hand, without the installer:
 
@@ -449,7 +508,10 @@ Environment variables:
 ```
 ct/beeldkrant.sh               Proxmox host script (creates the LXC)
 install/beeldkrant-install.sh  Runs inside the container
-install/debian.sh              Installer for a Debian 13 machine or VM
+install/debian.sh              Installer for a Debian 13 machine, VM or container (also builds the CT template)
+build/lxc/                     Builds and boot-tests the Proxmox CT template
+.github/workflows/             Builds the CT template for every release
+scripts/info.sh                The `beeldkrant-info` command (address, user and one-time password)
 deploy/                        systemd units for Beeldkrant and for updates started from the panel
 scripts/update.sh              The `update` command inside the container
 scripts/station.sh             The `beeldkrant-station` command (Build My TV Station)
